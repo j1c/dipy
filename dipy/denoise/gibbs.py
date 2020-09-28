@@ -299,6 +299,10 @@ def gibbs_removal(vol, slice_axis=2, n_points=3, n_jobs=1):
     if nd == 2:
         vol = _gibbs_removal_2d(vol, n_points=n_points, G0=G0, G1=G1)
     else:
+        mapwrapper = MapWrapper(n_jobs)
+        out = list(mapwrapper(_gibbs_removal_2d, np.moveaxis(vol, 2, 0)))
+        out = np.moveaxis(out, 0, 2)
+
         out = np.empty(vol.shape)
         if n_jobs == 1:
             for vi in range(shap[2]):
@@ -315,4 +319,4 @@ def gibbs_removal(vol, slice_axis=2, n_points=3, n_jobs=1):
     if slice_axis < 2 and nd > 2:
         vol = np.swapaxes(out, slice_axis, 2)
 
-    return out
+    return vol
