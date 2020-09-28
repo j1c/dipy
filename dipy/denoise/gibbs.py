@@ -1,5 +1,6 @@
 
 import numpy as np
+from scipy._lib._util import MapWrapper
 
 
 def _image_tv(x, axis=0, n_points=3):
@@ -220,7 +221,7 @@ def _gibbs_removal_2d(image, n_points=3, G0=None, G1=None):
     return imagec
 
 
-def gibbs_removal(vol, slice_axis=2, n_points=3):
+def gibbs_removal(vol, slice_axis=2, n_points=3, n_jobs=1):
     """Suppresses Gibbs ringing artefacts of images volumes.
 
     Parameters
@@ -233,6 +234,10 @@ def gibbs_removal(vol, slice_axis=2, n_points=3):
     n_points : int, optional
         Number of neighbour points to access local TV (see note).
         Default is set to 3.
+    n_jobs : int, optional
+        The number of jobs to run in parallel. Only used when `vol` is either 
+        a 3D or 4D volume. -1 means using all processors.
+        Default is set to 1. 
 
     Returns
     -------
@@ -264,6 +269,13 @@ def gibbs_removal(vol, slice_axis=2, n_points=3):
         raise ValueError("Different slices have to be organized along" +
                          "one of the 3 first matrix dimensions")
 
+    # check for valid number of n_jobs
+    if isinstance(n_jobs, int):
+        if n_jobs < -1:
+            raise ValueError("n_jobs must be a positive integer or -1.")
+    else:
+        raise TypeError("n_jobs must be an integer.")
+
     # 2) If this is not 2, swap axes so that different slices are ordered
     # along axis 2. Note that swapping is not required if data is already a
     # single image
@@ -287,14 +299,20 @@ def gibbs_removal(vol, slice_axis=2, n_points=3):
     if nd == 2:
         vol = _gibbs_removal_2d(vol, n_points=n_points, G0=G0, G1=G1)
     else:
-        for vi in range(shap[2]):
-            vol[:, :, vi] = _gibbs_removal_2d(vol[:, :, vi], n_points=n_points,
-                                              G0=G0, G1=G1)
+        out = np.empty(vol.shape)
+        if n_jobs == 1:
+            for vi in range(shap[2]):
+                out[:, :, vi] = _gibbs_removal_2d(vol[:, :, vi], n_points=n_points,
+                                                G0=G0, G1=G1)
+        else:
+            mapwrapper = MapWrapper(n_jobs)
+            out = mapwrapper(_gibbs_removal_2d, np.moveaxis(vol, 2, 0))
+            out = np.moveaxis(out, 0, 2)
 
     # Reshape data to original format
     if nd == 4:
-        vol = vol.reshape(inishap)
+        vol = out.reshape(inishap)
     if slice_axis < 2 and nd > 2:
-        vol = np.swapaxes(vol, slice_axis, 2)
+        vol = np.swapaxes(out, slice_axis, 2)
 
-    return vol
+    return out
